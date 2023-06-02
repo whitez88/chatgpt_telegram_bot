@@ -6,8 +6,16 @@ new_dialog_timeout: 600  # new dialog starts after timeout (in seconds)
 return_n_generated_images: 1
 n_chat_modes_per_page: 5
 enable_message_streaming: true  # if set, messages will be shown to user word-by-word
+admin_user_ids: "-"
+n_tts_models_per_page: 5
 
 # prices
 chatgpt_price_per_1000_tokens: 0.002
 gpt_price_per_1000_tokens: 0.02
 whisper_price_per_1_min: 0.006
+
+# ms tts
+enable_azure_tts: true
+azure_tts_key: ""
+azure_tts_region: ""
+azure_tts_name: "en-US-JessaNeural"

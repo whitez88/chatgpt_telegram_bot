@@ -34,8 +34,10 @@ import config
 import database
 import openai_utils
 
+from tts_utils import get_tts_speak_audio_stream
 
 # setup
+
 db = database.Database()
 logger = logging.getLogger(__name__)
 
@@ -295,6 +297,10 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
                 db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
                 dialog_id=None
             )
+            
+            if config.enable_azure_tts:
+                audio_stream = get_tts_speak_audio_stream(answer)
+                await context.bot.send_voice(chat_id=placeholder_message.chat_id, voice=audio_stream)
 
             db.update_n_used_tokens(user_id, current_model, n_input_tokens, n_output_tokens)
 
@@ -439,6 +445,42 @@ async def cancel_handle(update: Update, context: CallbackContext):
         task.cancel()
     else:
         await update.message.reply_text("<i>Nothing to cancel...</i>", parse_mode=ParseMode.HTML)
+
+# def get_tts_model_menu(page_index: int):
+    # n_tts_models_per_page = config.n_tts_models_per_page
+    # text = f"Select <b>TTS model</b> ({len(config.tts_models)} available):"
+    
+    # # buttons
+    # tts_models_keys = list(config.tts_models.keys())
+    # page_tts_model_keys = tts_models_keys[page_index * n_tts_models_per_page:(page_index + 1) * n_tts_models_per_page]
+
+    # keyboard = []
+    # for tts_model_key in page_tts_model_keys:
+        # name = config.tts_models[tts_model_key]["name"]
+        # keyboard.append([InlineKeyboardButton(name, callback_data=f"set_tts_model|{tts_model_key}")])
+
+    # # pagination
+    # if len(tts_models_keys) > n_tts_models_per_page:
+        # is_first_page = (page_index == 0)
+        # is_last_page = ((page_index + 1) * n_tts_models_per_page >= len(tts_models_keys))
+
+        # if is_first_page:
+            # keyboard.append([
+                # InlineKeyboardButton("»", callback_data=f"show_tts_models|{page_index + 1}")
+            # ])
+        # elif is_last_page:
+            # keyboard.append([
+                # InlineKeyboardButton("«", callback_data=f"show_tts_models|{page_index - 1}"),
+            # ])
+        # else:
+            # keyboard.append([
+                # InlineKeyboardButton("«", callback_data=f"show_tts_models|{page_index - 1}"),
+                # InlineKeyboardButton("»", callback_data=f"show_tts_models|{page_index + 1}")
+            # ])
+
+    # reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # return text, reply_markup
 
 
 def get_chat_mode_menu(page_index: int):
