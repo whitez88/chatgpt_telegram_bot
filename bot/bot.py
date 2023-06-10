@@ -48,6 +48,7 @@ HELP_MESSAGE = """Commands:
 ⚪ /retry – Regenerate last bot answer
 ⚪ /new – Start new dialog
 ⚪ /mode – Select chat mode
+⚪ /tts – Configure Azure text-to-speech
 ⚪ /settings – Show settings
 ⚪ /balance – Show balance
 ⚪ /help – Show help
@@ -298,8 +299,9 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
                 dialog_id=None
             )
             
-            if config.enable_azure_tts:
-                audio_stream = get_tts_speak_audio_stream(answer)
+            if config.enable_azure_tts and db.get_user_attribute(user_id, "current_tts_enabled"):
+                current_tts_voice = db.get_user_attribute(user_id, "current_tts_voice")
+                audio_stream = get_tts_speak_audio_stream(answer, current_tts_voice)
                 await context.bot.send_voice(chat_id=placeholder_message.chat_id, voice=audio_stream)
 
             db.update_n_used_tokens(user_id, current_model, n_input_tokens, n_output_tokens)
@@ -446,43 +448,151 @@ async def cancel_handle(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("<i>Nothing to cancel...</i>", parse_mode=ParseMode.HTML)
 
-# def get_tts_model_menu(page_index: int):
-    # n_tts_models_per_page = config.n_tts_models_per_page
-    # text = f"Select <b>TTS model</b> ({len(config.tts_models)} available):"
+# Text-to-speech
+def get_tts_language_menu(user_id: int):
+    tts_enabled = db.get_user_attribute(user_id, "current_tts_enabled")
+
+    if not tts_enabled:
+        # If TTS is disabled, only show the enable TTS menu
+        text = "Configure text-to-speech:"
+
+        keyboard = [
+            [InlineKeyboardButton("Enable", callback_data="toggle_tts|enable")]
+        ]
+    else:
+        current_tts_voice = db.get_user_attribute(user_id, "current_tts_voice")
+        
+        # If TTS is enabled, show the disable TTS menu and the text
+        text = f"Current text-to-speech voice: <b>{current_tts_voice}</b>\n\n"
+        text += "Select text-to-speech language:"
+
+        keyboard = [
+            [InlineKeyboardButton("Chinese", callback_data="set_tts_language|zh")],
+            [InlineKeyboardButton("English", callback_data="set_tts_language|en")],
+            [InlineKeyboardButton("Disable", callback_data="toggle_tts|disable")]
+        ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    return text, reply_markup
+
+def get_tts_voice_menu(user_id: int, page_index: int, language: str):   
+    current_tts_voice = db.get_user_attribute(user_id, "current_tts_voice")
+    n_tts_voices_per_page = config.n_tts_voices_per_page    
+    text = f"Current text-to-speech voice: <b>{current_tts_voice}</b>\n\nSelect Voice ({len(config.tts_voices[language])} available):"
     
-    # # buttons
-    # tts_models_keys = list(config.tts_models.keys())
-    # page_tts_model_keys = tts_models_keys[page_index * n_tts_models_per_page:(page_index + 1) * n_tts_models_per_page]
+    tts_voices_list = config.tts_voices[language]
+    page_tts_voices = tts_voices_list[page_index * n_tts_voices_per_page:(page_index + 1) * n_tts_voices_per_page]
 
-    # keyboard = []
-    # for tts_model_key in page_tts_model_keys:
-        # name = config.tts_models[tts_model_key]["name"]
-        # keyboard.append([InlineKeyboardButton(name, callback_data=f"set_tts_model|{tts_model_key}")])
+    keyboard = []
+    for tts_voice in page_tts_voices:
+        keyboard.append([InlineKeyboardButton(tts_voice, callback_data=f"set_tts_voice|{tts_voice}")])
 
-    # # pagination
-    # if len(tts_models_keys) > n_tts_models_per_page:
-        # is_first_page = (page_index == 0)
-        # is_last_page = ((page_index + 1) * n_tts_models_per_page >= len(tts_models_keys))
+    if len(tts_voices_list) > n_tts_voices_per_page:
+        is_first_page = (page_index == 0)
+        is_last_page = ((page_index + 1) * n_tts_voices_per_page >= len(tts_voices_list))
 
-        # if is_first_page:
-            # keyboard.append([
-                # InlineKeyboardButton("»", callback_data=f"show_tts_models|{page_index + 1}")
-            # ])
-        # elif is_last_page:
-            # keyboard.append([
-                # InlineKeyboardButton("«", callback_data=f"show_tts_models|{page_index - 1}"),
-            # ])
-        # else:
-            # keyboard.append([
-                # InlineKeyboardButton("«", callback_data=f"show_tts_models|{page_index - 1}"),
-                # InlineKeyboardButton("»", callback_data=f"show_tts_models|{page_index + 1}")
-            # ])
+        if is_first_page:
+            keyboard.append([
+                InlineKeyboardButton("»", callback_data=f"show_tts_voices|{page_index + 1}|{language}")
+            ])
+        elif is_last_page:
+            keyboard.append([
+                InlineKeyboardButton("«", callback_data=f"show_tts_voices|{page_index - 1}|{language}"),
+            ])
+        else:
+            keyboard.append([
+                InlineKeyboardButton("«", callback_data=f"show_tts_voices|{page_index - 1}|{language}"),
+                InlineKeyboardButton("»", callback_data=f"show_tts_voices|{page_index + 1}|{language}")
+            ])
 
-    # reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # return text, reply_markup
+    return text, reply_markup
 
+async def toggle_tts_handle(update: Update, context: CallbackContext):
+    await register_user_if_not_exists(update.callback_query, context, update.callback_query.from_user)
+    user_id = update.callback_query.from_user.id
 
+    query = update.callback_query
+    await query.answer()
+
+    action = query.data.split("|")[1]
+
+    if action == "enable":
+        db.set_user_attribute(user_id, "current_tts_enabled", True)
+        current_tts_voice = db.get_user_attribute(user_id, "current_tts_voice")
+
+        if current_tts_voice is None:
+            # Direct the user to the TTS voice selection menu
+            text, reply_markup = get_tts_language_menu(user_id)
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        else:
+            # TTS is enabled and a voice is already selected
+            text = "text-to-speech has been enabled.\n"
+            text += f"Current text-to-speech voice: <b>{current_tts_voice}</b>"
+            await query.edit_message_text(text, parse_mode=ParseMode.HTML)
+    elif action == "disable":
+        db.set_user_attribute(user_id, "current_tts_enabled", False)
+        await query.edit_message_text("text-to-speech has been disabled.", parse_mode=ParseMode.HTML)
+
+async def show_tts_language_handle(update: Update, context: CallbackContext):
+    await register_user_if_not_exists(update, context, update.message.from_user)
+    if await is_previous_message_not_answered_yet(update, context): return
+
+    user_id = update.message.from_user.id
+    db.set_user_attribute(user_id, "last_interaction", datetime.now())
+
+    text, reply_markup = get_tts_language_menu(user_id)
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def set_tts_language_handle(update: Update, context: CallbackContext):
+    await register_user_if_not_exists(update.callback_query, context, update.callback_query.from_user)
+    user_id = update.callback_query.from_user.id
+    
+    query = update.callback_query
+    await query.answer()
+
+    tts_language = query.data.split("|")[1]
+    db.set_user_attribute(user_id, "tts_language", tts_language)
+
+    text, reply_markup = get_tts_voice_menu(user_id, 0, tts_language)
+    await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def show_tts_voices_callback_handle(update: Update, context: CallbackContext):
+    await register_user_if_not_exists(update.callback_query, context, update.callback_query.from_user)
+    if await is_previous_message_not_answered_yet(update.callback_query, context): return
+
+    user_id = update.callback_query.from_user.id
+    db.set_user_attribute(user_id, "last_interaction", datetime.now())
+
+    query = update.callback_query
+    await query.answer()
+
+    page_index, language = query.data.split("|")[1:3]
+    page_index = int(page_index)
+    
+    text, reply_markup = get_tts_voice_menu(user_id, page_index, language)
+    try:
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    except telegram.error.BadRequest as e:
+        if str(e).startswith("Message is not modified"):
+            pass
+        
+async def set_tts_voice_handle(update: Update, context: CallbackContext):
+    await register_user_if_not_exists(update.callback_query, context, update.callback_query.from_user)
+    user_id = update.callback_query.from_user.id
+
+    query = update.callback_query
+    await query.answer()
+
+    tts_voice = query.data.split("|")[1]  
+
+    db.set_user_attribute(user_id, "current_tts_voice", tts_voice)
+    db.start_new_dialog(user_id)
+
+    await query.edit_message_text( f"text-to-speech voice selected: {tts_voice}", parse_mode=ParseMode.HTML )
+    
+# Chat Mode
 def get_chat_mode_menu(page_index: int):
     n_chat_modes_per_page = config.n_chat_modes_per_page
     text = f"Select <b>chat mode</b> ({len(config.chat_modes)} modes available):"
@@ -737,14 +847,17 @@ async def error_handle(update: Update, context: CallbackContext) -> None:
         await context.bot.send_message(update.effective_chat.id, "Some error in error handler")
 
 async def post_init(application: Application):
-    await application.bot.set_my_commands([
-        BotCommand("/new", "Start new dialog"),
-        BotCommand("/mode", "Select chat mode"),
-        BotCommand("/retry", "Re-generate response for previous query"),
-        BotCommand("/balance", "Show balance"),
-        BotCommand("/settings", "Show settings"),
-        BotCommand("/help", "Show help message"),
-    ])
+    commands = []
+    commands.append(BotCommand("/new", "Start new dialog"))
+    commands.append(BotCommand("/mode", "Select chat mode"))
+    if config.enable_azure_tts:
+        commands.append(BotCommand("/tts", "Configure Azure text-to-speech"))
+    commands.append(BotCommand("/retry", "Re-generate response for previous query"))
+    commands.append(BotCommand("/balance", "Show balance"))
+    commands.append(BotCommand("/settings", "Show settings"))
+    commands.append(BotCommand("/help", "Show help message"))
+
+    await application.bot.set_my_commands(commands)
 
 def run_bot() -> None:
     application = (
@@ -777,6 +890,12 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("mode", show_chat_modes_handle, filters=user_filter))
     application.add_handler(CallbackQueryHandler(show_chat_modes_callback_handle, pattern="^show_chat_modes"))
     application.add_handler(CallbackQueryHandler(set_chat_mode_handle, pattern="^set_chat_mode"))
+    
+    application.add_handler(CommandHandler("tts", show_tts_language_handle, filters=user_filter))
+    application.add_handler(CallbackQueryHandler(set_tts_language_handle, pattern="^set_tts_language"))
+    application.add_handler(CallbackQueryHandler(show_tts_voices_callback_handle, pattern="^show_tts_voices"))
+    application.add_handler(CallbackQueryHandler(set_tts_voice_handle, pattern="^set_tts_voice"))
+    application.add_handler(CallbackQueryHandler(toggle_tts_handle, pattern="^toggle_tts"))
 
     application.add_handler(CommandHandler("settings", settings_handle, filters=user_filter))
     application.add_handler(CallbackQueryHandler(set_settings_handle, pattern="^set_settings"))

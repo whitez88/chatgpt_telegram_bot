@@ -47,7 +47,10 @@ class Database:
             "current_buffer_setting": False,
             "current_dialog_id": None,
             "current_chat_mode": "assistant",
+            "current_tts_language": "zh",
+            "current_tts_voice": config.tts_voices["zh"][0],
             "current_model": config.models["available_text_models"][0],
+            "current_tts_enabled": False,
 
             "n_used_tokens": {},
 
@@ -66,6 +69,9 @@ class Database:
             "_id": dialog_id,
             "user_id": user_id,
             "chat_mode": self.get_user_attribute(user_id, "current_chat_mode"),
+            "tts_language": self.get_user_attribute(user_id, "current_tts_language"),
+            "tts_voice": self.get_user_attribute(user_id, "current_tts_voice"),
+            "tts_enabled": self.get_user_attribute(user_id, "current_tts_enabled"),
             "start_time": datetime.now(),
             "model": self.get_user_attribute(user_id, "current_model"),
             "messages": []

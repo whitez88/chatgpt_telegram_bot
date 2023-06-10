@@ -1,10 +1,10 @@
 import os
 import tempfile
 import azure.cognitiveservices.speech as speechsdk
-from config import azure_tts_key, azure_tts_region, azure_tts_name
+from config import azure_tts_key, azure_tts_region, azure_default_tts_voice
 
 
-def get_tts_speak_audio_stream(text: str) -> bytes:
+def get_tts_speak_audio_stream(text: str, azure_tts_voice_name: str) -> bytes:
     SPEECH_KEY = azure_tts_key
     SPEECH_REGION = azure_tts_region
     speech_config = speechsdk.SpeechConfig(subscription=SPEECH_KEY, region=SPEECH_REGION)
@@ -12,9 +12,13 @@ def get_tts_speak_audio_stream(text: str) -> bytes:
     # Use a temporary file for the audio output
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
         audio_config = speechsdk.audio.AudioOutputConfig(filename=temp_file.name)
-
+        
+        # Use default voice if not defined
+        if azure_tts_voice_name is None:
+            azure_tts_voice_name = azure_default_tts_voice
+        
         # The language of the voice that speaks.
-        speech_config.speech_synthesis_voice_name = azure_tts_name
+        speech_config.speech_synthesis_voice_name = azure_tts_voice_name
 
         synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
         try:
@@ -28,5 +32,6 @@ def get_tts_speak_audio_stream(text: str) -> bytes:
             audio_stream = f.read()
 
     # Delete the temporary file
-    # os.remove(temp_file.name)
+    os.remove(temp_file.name)
+    
     return audio_stream
