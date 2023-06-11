@@ -51,6 +51,7 @@ class Database:
             "current_tts_voice": config.tts_voices["zh"][0],
             "current_model": config.models["available_text_models"][0],
             "current_tts_enabled": False,
+            "current_namespace": "default",
 
             "n_used_tokens": {},
 
@@ -72,6 +73,7 @@ class Database:
             "tts_language": self.get_user_attribute(user_id, "current_tts_language"),
             "tts_voice": self.get_user_attribute(user_id, "current_tts_voice"),
             "tts_enabled": self.get_user_attribute(user_id, "current_tts_enabled"),
+            "namespace": self.get_user_attribute(user_id, "current_namespace"), 
             "start_time": datetime.now(),
             "model": self.get_user_attribute(user_id, "current_model"),
             "messages": []

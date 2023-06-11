@@ -49,3 +49,8 @@ azure_default_tts_voice = config_yaml.get("azure_default_tts_voice", "en-US-AIGe
 # Azure text-to-speech voices
 with open(config_dir / "azure_tts_voices.yml", 'r') as f:
     tts_voices = yaml.safe_load(f)
+    
+# pinecone
+pinecone_api_key = config_yaml["pinecone_api_key"]
+pinecone_env = config_yaml["pinecone_env"]
+pinecone_index_name = config_yaml["pinecone_index_name"]

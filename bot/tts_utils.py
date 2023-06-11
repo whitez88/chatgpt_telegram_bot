@@ -4,7 +4,7 @@ import azure.cognitiveservices.speech as speechsdk
 from config import azure_tts_key, azure_tts_region, azure_default_tts_voice
 
 
-def get_tts_speak_audio_stream(text: str, azure_tts_voice_name: str) -> bytes:
+async def get_tts_speak_audio_stream(text: str, azure_tts_voice_name: str) -> bytes:
     SPEECH_KEY = azure_tts_key
     SPEECH_REGION = azure_tts_region
     speech_config = speechsdk.SpeechConfig(subscription=SPEECH_KEY, region=SPEECH_REGION)

@@ -33,7 +33,7 @@ from telegram.constants import ParseMode, ChatAction
 import config
 import database
 import openai_utils
-
+import flowise_utils
 from tts_utils import get_tts_speak_audio_stream
 
 # setup
@@ -49,6 +49,7 @@ HELP_MESSAGE = """Commands:
 ⚪ /new – Start new dialog
 ⚪ /mode – Select chat mode
 ⚪ /tts – Configure Azure text-to-speech
+⚪ /namespace – Select namespace
 ⚪ /settings – Show settings
 ⚪ /balance – Show balance
 ⚪ /help – Show help
@@ -208,6 +209,10 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
 
     if chat_mode == "artist":
         await generate_image_handle(update, context, message=message)
+        return
+    
+    if chat_mode == "qa_langchain":
+        await question_answer(update, context, message=_message)
         return
 
     if db.get_user_attribute(user_id, "current_buffer_setting") is True:
@@ -421,6 +426,110 @@ async def generate_image_handle(update: Update, context: CallbackContext, messag
         await update.message.chat.send_action(action="upload_photo")
         await update.message.reply_photo(image_url, parse_mode=ParseMode.HTML)
 
+# File handler
+async def file_message_handle(update: Update, context: CallbackContext, message=None):
+    user_id = update.message.from_user.id
+    chat_mode = db.get_user_attribute(user_id, "current_chat_mode")
+
+    if chat_mode == "qa_langchain":
+        file_id = update.message.document.file_id
+        file_name = update.message.document.file_name
+        file_extension = os.path.splitext(file_name)[-1].lower()
+        namespace = db.get_user_attribute(user_id, "current_namespace")
+        
+        if file_extension not in ['.txt', '.pdf']:
+            await update.message.reply_text("Unsupported file format. Only .txt and .pdf files are supported.")
+            return
+        
+        # send placeholder message to user
+        placeholder_message = await update.message.reply_text("...")
+
+        # send typing action
+        await update.message.chat.send_action(action="typing")
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_dir = Path(tmp_dir)
+            text_file_path = tmp_dir / "document.txt"
+            pdf_file_path = tmp_dir / "document.pdf"
+
+            # Download the file
+            file = await context.bot.get_file(file_id)
+            if file_extension == '.txt':
+                await file.download_to_drive(text_file_path)
+                document_path = text_file_path
+                text = flowise_utils.upsert_txt_document(str(document_path), namespace, user_id)
+            else:  # file_extension == '.pdf'
+                await file.download_to_drive(pdf_file_path)
+                document_path = pdf_file_path
+                text = flowise_utils.upsert_pdf_document(str(document_path), namespace, user_id)
+            
+            cleaned_text = text.replace("\\\"", "\"").replace("\\n", "\n")[1:-1]
+            msg_text = f"Document {file_name} is upserted to namespace <b>{namespace}</b>\n\n<b>Summary:</b>\n"
+            msg_text += cleaned_text
+            await context.bot.edit_message_text(msg_text, chat_id=placeholder_message.chat_id, message_id=placeholder_message.message_id, parse_mode=ParseMode.HTML)
+    else:
+        # Reply to the user indicating that file support is not available for the current chat mode
+        await update.message.reply_text("File support is not available in this chat mode.")
+        
+def get_namespace_menu(user_id: int):   
+    namespace = db.get_user_attribute(user_id, "current_namespace")
+    text = f"Current namespace: {namespace}\n\n"
+    text += "Please select the namespace:"
+
+    keyboard = [
+        [InlineKeyboardButton("Default", callback_data="set_namespace|default")],
+        [InlineKeyboardButton("Personal", callback_data="set_namespace|personal")],
+        [InlineKeyboardButton("Work", callback_data="set_namespace|work")]
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    return text, reply_markup
+
+async def show_namespace_handle(update: Update, context: CallbackContext):
+    await register_user_if_not_exists(update, context, update.message.from_user)
+    if await is_previous_message_not_answered_yet(update, context): return
+
+    user_id = update.message.from_user.id
+    db.set_user_attribute(user_id, "last_interaction", datetime.now())
+
+    text, reply_markup = get_namespace_menu(user_id)
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+async def set_namespace_handle(update: Update, context: CallbackContext):
+    await register_user_if_not_exists(update.callback_query, context, update.callback_query.from_user)
+    user_id = update.callback_query.from_user.id
+    
+    query = update.callback_query
+    await query.answer()
+
+    namespace = query.data.split("|")[1]
+    db.set_user_attribute(user_id, "current_namespace", namespace)
+
+    text = f"Current namespace is set to {namespace}."
+    await query.edit_message_text(text, parse_mode=ParseMode.HTML)
+    
+async def question_answer(update: Update, context: CallbackContext, message=None):
+    await register_user_if_not_exists(update, context, update.message.from_user)
+    if await is_previous_message_not_answered_yet(update, context): return
+
+    user_id = update.message.from_user.id
+    db.set_user_attribute(user_id, "last_interaction", datetime.now())
+    namespace = db.get_user_attribute(user_id, "current_namespace")
+
+    # send placeholder message to user
+    placeholder_message = await update.message.reply_text("...")
+
+    # send typing action
+    await update.message.chat.send_action(action="typing")
+    
+    text = flowise_utils.query(message, namespace, user_id)
+    cleaned_text = text.replace("\\\"", "\"").replace("\\n", "\n")[1:-1]
+    await context.bot.edit_message_text(cleaned_text, chat_id=placeholder_message.chat_id, message_id=placeholder_message.message_id, parse_mode=ParseMode.HTML)
+    
+    if config.enable_azure_tts and db.get_user_attribute(user_id, "current_tts_enabled"):
+        current_tts_voice = db.get_user_attribute(user_id, "current_tts_voice")
+        audio_stream = await get_tts_speak_audio_stream(cleaned_text, current_tts_voice)
+        await context.bot.send_voice(chat_id=placeholder_message.chat_id, voice=audio_stream)
 
 async def new_dialog_handle(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)
@@ -852,6 +961,7 @@ async def post_init(application: Application):
     commands.append(BotCommand("/mode", "Select chat mode"))
     if config.enable_azure_tts:
         commands.append(BotCommand("/tts", "Configure Azure text-to-speech"))
+    commands.append(BotCommand("/namespace", "Select namespace"))
     commands.append(BotCommand("/retry", "Re-generate response for previous query"))
     commands.append(BotCommand("/balance", "Show balance"))
     commands.append(BotCommand("/settings", "Show settings"))
@@ -896,6 +1006,10 @@ def run_bot() -> None:
     application.add_handler(CallbackQueryHandler(show_tts_voices_callback_handle, pattern="^show_tts_voices"))
     application.add_handler(CallbackQueryHandler(set_tts_voice_handle, pattern="^set_tts_voice"))
     application.add_handler(CallbackQueryHandler(toggle_tts_handle, pattern="^toggle_tts"))
+    
+    application.add_handler(CommandHandler("namespace", show_namespace_handle, filters=user_filter))
+    application.add_handler(MessageHandler(filters.Document.ALL & user_filter, file_message_handle))
+    application.add_handler(CallbackQueryHandler(set_namespace_handle, pattern="^set_namespace"))
 
     application.add_handler(CommandHandler("settings", settings_handle, filters=user_filter))
     application.add_handler(CallbackQueryHandler(set_settings_handle, pattern="^set_settings"))

@@ -7,3 +7,4 @@ python-dotenv==0.21.0
 pydub==0.25.1
 azure-cognitiveservices-speech==1.26.0
 langchain
+pinecone-client
