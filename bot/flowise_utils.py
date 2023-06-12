@@ -9,7 +9,7 @@ PINECONE_INDEX = config.pinecone_index_name
 os.environ['OPENAI_API_KEY'] = config.openai_api_key
 
 def upsert_txt_document(document_path: str, namespace: str, user_id: int):
-    API_URL = "https://8783-175-143-213-159.ngrok-free.app/api/v1/prediction/d7a7691a-e216-492c-ac2e-62c9a6cba98e"
+    API_URL = "https://6b2e-175-143-206-237.ngrok-free.app/api/v1/prediction/d7a7691a-e216-492c-ac2e-62c9a6cba98e"
     # use form data to upload files
     form_data = {
         "files": (document_path, open(document_path, 'rb'))
@@ -25,7 +25,7 @@ def upsert_txt_document(document_path: str, namespace: str, user_id: int):
     return response.text
 
 def upsert_pdf_document(document_path: str, namespace: str, user_id: int):
-    API_URL = "https://8783-175-143-213-159.ngrok-free.app/api/v1/prediction/5df81587-f80c-42b2-b6c9-8f3ca67950fb"
+    API_URL = "https://6b2e-175-143-206-237.ngrok-free.app/api/v1/prediction/5df81587-f80c-42b2-b6c9-8f3ca67950fb"
     # use form data to upload files
     form_data = {
         "files": (document_path, open(document_path, 'rb'))
@@ -41,7 +41,7 @@ def upsert_pdf_document(document_path: str, namespace: str, user_id: int):
     return response.text
 
 def query(message: str, namespace: str, user_id: int):
-    API_URL = "https://8783-175-143-213-159.ngrok-free.app/api/v1/prediction/d306eda3-d8db-417a-87d5-217919c6103f"
+    API_URL = "https://6b2e-175-143-206-237.ngrok-free.app/api/v1/prediction/d306eda3-d8db-417a-87d5-217919c6103f"
     # use form data to upload files
     payload = {
         "question": message,

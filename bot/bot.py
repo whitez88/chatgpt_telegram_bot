@@ -306,7 +306,7 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
             
             if config.enable_azure_tts and db.get_user_attribute(user_id, "current_tts_enabled"):
                 current_tts_voice = db.get_user_attribute(user_id, "current_tts_voice")
-                audio_stream = get_tts_speak_audio_stream(answer, current_tts_voice)
+                audio_stream = await get_tts_speak_audio_stream(answer, current_tts_voice)
                 await context.bot.send_voice(chat_id=placeholder_message.chat_id, voice=audio_stream)
 
             db.update_n_used_tokens(user_id, current_model, n_input_tokens, n_output_tokens)
